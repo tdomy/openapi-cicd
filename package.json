@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "build": "redoc-cli build openapi.yml -o dist/index.html",
+    "lint": "spectral lint openapi.yml"
+  },
+  "dependencies": {
+    "@stoplight/spectral-cli": "^6.4.0",
+    "redoc-cli": "^0.13.14"
+  }
+}
