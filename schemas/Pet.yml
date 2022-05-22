@@ -4,7 +4,7 @@ required:
   - name
 properties:
   id:
-    type: integer
+    type: int
     format: int64
   name:
     type: string
