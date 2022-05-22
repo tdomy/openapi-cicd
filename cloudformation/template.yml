@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  ProjectName:
+    Type: String
+
+Resources:
+# ------------------------------------------------------------#
+#  S3
+# ------------------------------------------------------------#
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PolicyForCloudFrontPrivateContent
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginAccessIdentity}"
+            Action: s3:GetObject
+            Resource:
+              - Fn::Join:
+                - ""
+                - - !GetAtt S3Bucket.Arn
+                  - "/*"
+
+# ------------------------------------------------------------#
+#  CloudFront
+# ------------------------------------------------------------#
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Ref ProjectName
+        DefaultCacheBehavior:
+          TargetOriginId: S3BucketOrigin
+          AllowedMethods:
+            - HEAD
+            - GET
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed cache policy: CachingOptimized
+          Compress: true
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: index.html
+        Enabled: true
+        Origins:
+          - Id: S3BucketOrigin
+            DomainName: !GetAtt S3Bucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}"
+
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref ProjectName
+
+# ------------------------------------------------------------#
+#  IAM
+# ------------------------------------------------------------#
+  GithubActionsUser:
+    Type: AWS::IAM::User
+    Properties:
+      ManagedPolicyArns:
+        - !Ref S3BucketAccessPolicy
+        - !Ref CreateInvalidationPolicy
+      UserName: !Sub "${ProjectName}-github-actions"
+
+  S3BucketAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub "Enable access to ${ProjectName} bucket"
+      ManagedPolicyName: !Sub "${ProjectName}-s3-bucket-access"
+      Path: /
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ListObjectsInBucket
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource:
+              - !GetAtt S3Bucket.Arn
+          - Sid: AllObjectActions
+            Effect: Allow
+            Action: s3:*Object*
+            Resource:
+              - Fn::Join:
+                - ""
+                - - !GetAtt S3Bucket.Arn
+                  - "/*"
+
+  CreateInvalidationPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub "Enable to create invalidation for ${ProjectName} distribution"
+      ManagedPolicyName: !Sub "${ProjectName}-create-invalidation"
+      Path: /
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: cloudfront:CreateInvalidation
+            Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+Outputs:
+  DomainName:
+    Value: !GetAtt CloudFrontDistribution.DomainName
