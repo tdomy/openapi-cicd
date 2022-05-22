@@ -3,6 +3,7 @@ on: [pull_request]
 
 jobs:
   lint:
+    name: openapi lint
     runs-on: ubuntu-20.04
     timeout-minutes: 5
 
